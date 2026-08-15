@@ -167,11 +167,14 @@ class CommandsCfg:
         rel_heading_envs=1.0,
         heading_command=False,
         debug_vis=True,
+        # Start the curriculum at a command magnitude that actually requires stepping.
+        # (+-0.1 m/s is satisfiable by standing still: exp(-0.01/0.25) ~ 0.96, so the policy
+        #  has no incentive to produce a gait and the curriculum stalls at the first level.)
         ranges=mdp.UniformLevelVelocityCommandCfg.Ranges(
-            lin_vel_x=(-0.1, 0.1), lin_vel_y=(-0.1, 0.1), ang_vel_z=(-0.1, 0.1)
+            lin_vel_x=(-0.3, 0.5), lin_vel_y=(-0.2, 0.2), ang_vel_z=(-0.3, 0.3)
         ),
         limit_ranges=mdp.UniformLevelVelocityCommandCfg.Ranges(
-            lin_vel_x=(-0.5, 1.0), lin_vel_y=(-0.3, 0.3), ang_vel_z=(-0.2, 0.2)
+            lin_vel_x=(-0.5, 1.0), lin_vel_y=(-0.3, 0.3), ang_vel_z=(-1.0, 1.0)
         ),
     )
 
@@ -352,6 +355,8 @@ class CurriculumCfg:
 
     terrain_levels = CurrTerm(func=mdp.terrain_levels_vel)
     lin_vel_cmd_levels = CurrTerm(mdp.lin_vel_cmd_levels)
+    # without this the yaw command stays at its initial range forever and turning is never learned
+    ang_vel_cmd_levels = CurrTerm(mdp.ang_vel_cmd_levels)
 
 
 @configclass
