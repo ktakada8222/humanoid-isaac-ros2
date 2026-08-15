@@ -326,10 +326,24 @@ class RewardsCfg:
             "sensor_cfg": SceneEntityCfg("contact_forces", body_names=".*ankle_roll.*"),
         },
     )
-    # was returning 0.96 of its cap -- shaping must not rival the task reward
+    # Rewards a step only while exactly one foot is on the ground, so a robot standing on both
+    # feet scores zero. This is the only term here that a stationary robot cannot collect, and
+    # it is what makes taking a step strictly better than not taking one.
+    feet_air_time = RewTerm(
+        func=mdp.feet_air_time_positive_biped,
+        weight=1.0,
+        params={
+            "command_name": "base_velocity",
+            "threshold": 0.4,
+            "sensor_cfg": SceneEntityCfg("contact_forces", body_names=".*ankle_roll.*"),
+        },
+    )
+    # NOTE: foot_clearance_reward multiplies the height error by tanh(|foot velocity|), so a foot
+    # that never moves has zero error and collects exp(0) = 1.0, the maximum. It rewards keeping
+    # the feet still, not lifting them. Kept only as weak swing-height shaping.
     feet_clearance = RewTerm(
         func=mdp.foot_clearance_reward,
-        weight=0.3,
+        weight=0.1,
         params={
             "std": 0.05,
             "tanh_mult": 2.0,
