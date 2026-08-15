@@ -85,7 +85,9 @@ def lin_vel_cmd_levels(
     if _is_update_step(env, "lin"):
         if rate > reward_term.weight * promote_ratio and survival > min_survival:
             delta = step
-        elif rate < reward_term.weight * demote_ratio:
+        elif rate < reward_term.weight * demote_ratio and survival > 0.05:
+            # `survival > 0.05` skips envs reset before they gathered any data (e.g. the
+            # initial reset), whose empty episode sums would read as a tracking rate of 0.
             delta = -step
         else:
             delta = 0.0
@@ -117,7 +119,9 @@ def ang_vel_cmd_levels(
     if _is_update_step(env, "ang"):
         if rate > reward_term.weight * promote_ratio and survival > min_survival:
             delta = step
-        elif rate < reward_term.weight * demote_ratio:
+        elif rate < reward_term.weight * demote_ratio and survival > 0.05:
+            # `survival > 0.05` skips envs reset before they gathered any data (e.g. the
+            # initial reset), whose empty episode sums would read as a tracking rate of 0.
             delta = -step
         else:
             delta = 0.0

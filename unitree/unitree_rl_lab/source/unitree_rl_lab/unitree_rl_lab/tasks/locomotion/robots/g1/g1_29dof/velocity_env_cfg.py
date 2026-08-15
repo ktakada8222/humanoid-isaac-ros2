@@ -414,4 +414,17 @@ class RobotPlayEnvCfg(RobotEnvCfg):
         self.scene.num_envs = 32
         self.scene.terrain.terrain_generator.num_rows = 2
         self.scene.terrain.terrain_generator.num_cols = 10
-        self.commands.base_velocity.ranges = self.commands.base_velocity.limit_ranges
+        # Do NOT blindly replay at limit_ranges: the yaw limit is +-1.0 rad/s but the command
+        # curriculum only reaches whatever level training actually unlocked, so commanding the
+        # full limit feeds the policy out-of-distribution commands and it looks broken.
+        # Widen these to match Curriculum/ang_vel_cmd_levels from the run being replayed.
+        self.commands.base_velocity.ranges = mdp.UniformLevelVelocityCommandCfg.Ranges(
+            lin_vel_x=(-0.5, 1.0), lin_vel_y=(-0.3, 0.3), ang_vel_z=(-0.3, 0.3)
+        )
+        # Curricula must not run during inference. The command-level terms mutate `ranges` in
+        # place, and on the first reset the episode sums are still zero, so they read a tracking
+        # rate of 0 and immediately start demoting -- shrinking the command to +-0.1 m/s, which
+        # makes a perfectly good policy look like it is just standing there.
+        self.curriculum.terrain_levels = None
+        self.curriculum.lin_vel_cmd_levels = None
+        self.curriculum.ang_vel_cmd_levels = None
