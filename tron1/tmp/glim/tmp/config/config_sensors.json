@@ -1,0 +1,17 @@
+{
+  "sensors": {
+    "T_lidar_imu": [
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      1.0
+    ],
+    "global_shutter_lidar": false,
+    "imu_acc_noise": 0.01,
+    "imu_gyro_noise": 0.0001,
+    "imu_int_noise": 0.0001
+  }
+}

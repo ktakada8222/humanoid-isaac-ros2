@@ -1,0 +1,37 @@
+Panels:
+- Class: rviz_common/Displays
+- Class: rviz_common/Selection
+- Class: rviz_common/Tool Properties
+- Class: rviz_common/Views
+Visualization Manager:
+  Global Options:
+    Fixed Frame: map
+  Displays:
+  - Name: TF
+    Class: rviz_default_plugins/TF
+  - Name: Pose
+    Class: rviz_default_plugins/Pose
+    Enabled: true
+    Topic:
+      Value: /pcl_pose
+    Shape: Axes
+    Axes Length: 0.5
+  - Name: Path
+    Class: rviz_default_plugins/Path
+    Enabled: true
+    Topic:
+      Value: /path
+  - Name: MapCloud
+    Class: rviz_default_plugins/PointCloud2
+    Enabled: true
+    Topic:
+      Value: /map_cloud
+    Size (m): 0.05
+    Style: Points
+  - Name: Scan
+    Class: rviz_default_plugins/PointCloud2
+    Enabled: true
+    Topic:
+      Value: /velodyne_sim/points_raw
+    Size (m): 0.05
+    Style: Points

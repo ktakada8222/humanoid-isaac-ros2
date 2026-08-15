@@ -1,0 +1,14 @@
+FROM ros:humble
+
+RUN apt-get update && apt-get install -y \
+    pcl-tools \
+    python3 \
+    python3-pip \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /data
+
+# スクリプトをコピー
+COPY scripts/add_intensity.py /usr/local/bin/add_intensity.py
+
+ENTRYPOINT ["python3", "/usr/local/bin/add_intensity.py"]

@@ -1,0 +1,52 @@
+# # Ignore factory USD artifacts under any usd/ directory
+# **/usd/factory*.usd*
+# !HumanoidPoC/scripts/usds/lightwheel_factory_sample.usd
+
+# Ignore only USD files under HumanoidPoC/scripts/usds_confidential
+HumanoidPoC/scripts/usds_confidential/*.usd
+HumanoidPoC/scripts/usds_confidential/*.usdz
+
+__pycache__/
+*.pyc
+# Compressed files
+*.zip
+
+# ROS 2 colcon build outputs
+tron1/ros2_ws/build/
+tron1/ros2_ws/install/
+tron1/ros2_ws/log/
+
+# ROS 2 colcon build outputs
+HumanoidPoC/ros2/ros2_ws/build/
+HumanoidPoC/ros2/ros2_ws/install/
+HumanoidPoC/ros2/ros2_ws/log/
+
+# VSCode / IDE
+.vscode/
+.idea/
+
+
+
+# Outputs
+**/output/*
+**/outputs/*
+**/videos/*
+**/wandb/*
+**/.neptune/*
+docker/artifacts/
+*.tmp
+
+# Doc Outputs
+**/docs/_build/*
+**/generated/*
+
+# Isaac-Sim packman
+_isaac_sim*
+_repo
+_build
+.lastformat
+
+# RL-Games
+**/runs/*
+**/logs/*
+**/recordings/*

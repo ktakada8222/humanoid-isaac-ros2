@@ -1,0 +1,78 @@
+services:
+  controller:
+    build: .
+    container_name: tron1-controller
+    network_mode: "host"
+    environment:
+      - ROBOT_TYPE=${ROBOT_TYPE:-PF_TRON1A}
+    command:
+      - -lc
+      - |
+        source /opt/ros/noetic/setup.bash
+        exec /workspace/tron1-mujoco-sim/limxsdk-lowlevel/build/devel/lib/limxsdk_lowlevel/pf_groupJoints_move 127.0.0.1
+  glim:
+    # image: koide3/glim_ros2:humble_cuda12.2   # ←使わない
+    build:
+      context: .
+      dockerfile: Dockerfile.glim_cyclone       # ←このDockerfileを使ってビルド
+    image: glim_ros2:humble_cuda12.2_cyclone    # ←タグ名
+    container_name: glim-ros2
+    network_mode: host
+    # Docker Engine 24+ ならこちらが簡単
+    gpus: all
+    # 旧composeなら:
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - capabilities: ["gpu"]
+    environment:
+      - DISPLAY=${DISPLAY}
+      - QT_X11_NO_MITSHM=1
+      - LIBGL_ALWAYS_INDIRECT=0
+      - ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-0}
+      # ↓画像側既定が Cyclone なので指定不要だが、明示してもOK
+      - RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=all
+    volumes:
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+      - ../slam/glim/config:/glim/config:rw
+      - ../slam/glim/maps:/glim/maps:rw
+      - ../slam/glim/output:/tmp/dump:rw
+    command:
+      - bash
+      - -lc
+      - |
+        source /opt/ros/humble/setup.bash
+        exec ros2 run glim_ros glim_rosnode --ros-args \
+          -p config_path:=/glim/config \
+          -p use_sim_time:=true \
+          -r /os_cloud_node/points:=/points_raw \
+          -r /os_cloud_node/imu:=/imu
+
+  rviz:
+    # image: osrf/ros:humble-desktop           # ←削除
+    build:
+      context: .
+      dockerfile: Dockerfile.rviz_cyclone      # ←この Dockerfile を使う
+    image: rviz:humble_cyclone                 # ←任意のタグ名
+    container_name: rviz2
+    network_mode: host
+    depends_on:
+      - glim
+    environment:
+      - DISPLAY=${DISPLAY}
+      - QT_X11_NO_MITSHM=1
+      - ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-0}
+      # Dockerfile側で既に Cyclone を既定にしているので指定不要だが、明示してもOK
+      - RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+    volumes:
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+      - ../slam/glim/config:/glim/config:ro
+    command:
+      - bash
+      - -lc
+      - |
+        source /opt/ros/humble/setup.bash
+        exec rviz2

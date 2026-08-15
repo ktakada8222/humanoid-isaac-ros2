@@ -1,0 +1,19 @@
+# Nav2 utils Dockerfile
+FROM ghcr.io/tiryoh/ros2-desktop-vnc:humble
+
+# 環境変数
+ENV DEBIAN_FRONTEND=noninteractive
+ENV ROS_DISTRO=humble
+
+# Nav2 と Turtlebot3 の導入
+RUN apt-get update && apt-get install -y \
+    ros-${ROS_DISTRO}-navigation2 \
+    ros-${ROS_DISTRO}-nav2-bringup \
+    python3-colcon-common-extensions \
+    python3-rosdep \
+    git \
+    nano \
+    ros-humble-rmw-cyclonedds-cpp \
+    && rm -rf /var/lib/apt/lists/*
+
+ENV RMW_IMPLEMENTATION=rmw_cyclonedds_cpp

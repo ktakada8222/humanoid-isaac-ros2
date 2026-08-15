@@ -1,0 +1,18 @@
+<!--
+  このBehavior Tree ツリーは、ゴールポーズが指定されたときにグローバルパスを計画し、パス上に障害物を検知したら停止し、取り除かれたら計画を再開する。
+  運動学的に有効なプランナーが選択されている場合、これは継続的に実行されます。
+-->
+<root main_tree_to_execute="MainTree">
+  <BehaviorTree ID="MainTree">
+    <PipelineSequence name="NavigateWithReplanning">
+      <GoalUpdatedController>
+        <ComputePathToPose goal="{goal}" path="{path}" planner_id="GridBased"/>
+      </GoalUpdatedController>
+      <!-- number_of_retries の値が大きいほど、通れないか長時間こころみる -->
+      <RecoveryNode number_of_retries="100" name="FollowPath">
+        <FollowPath path="{path}" controller_id="FollowPath"/>
+        <ClearEntireCostmap name="ClearLocalCostmap-Context" service_name="local_costmap/clear_entirely_local_costmap"/>
+      </RecoveryNode>
+    </PipelineSequence>
+  </BehaviorTree>
+</root>

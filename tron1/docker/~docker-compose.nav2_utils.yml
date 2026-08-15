@@ -1,0 +1,18 @@
+version: "3.9"
+services:
+  nav2_utils:
+    build:
+      context: .
+      dockerfile: Dockerfile.nav2_utils
+    image: nav2_utils:humble
+    container_name: nav2_utils
+    network_mode: "host"
+    shm_size: "512m"
+    environment:
+      - ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-0}
+      - RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+      - NOVNC_PORT=6080 
+    security_opt:
+      - seccomp=unconfined
+    volumes:
+      - ../ros2:/home/ubuntu/ros2

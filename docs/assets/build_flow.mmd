@@ -1,0 +1,12 @@
+flowchart LR
+    subgraph P1["第1部 事前準備（ソース不要・先行実施可）"]
+        direction TB
+        A["ハード/ソフト要件<br/>NVIDIA ドライバ"] --> B["Docker + NVIDIA<br/>Container Toolkit"] --> C["Isaac Sim 5.0 / Lab 2.2<br/>venv (Python 3.11)"] --> D["ROS 2 Humble +<br/>ros_workspaces ビルド"]
+    end
+    subgraph P2["第2部 ソース受領後"]
+        direction TB
+        E["humanoid-isaac-ros2<br/>取得"] --> F["pip install -e<br/>(依存も自動)"] --> G["run_locomotion.sh<br/>で起動"] --> H["起動確認<br/>(ROS topics)"]
+    end
+    P1 ==>|ソース受領| P2
+    classDef ok fill:#e8f0f9,stroke:#1d5d9b,stroke-width:1.5px,color:#0e2a47
+    class A,B,C,D,E,F,G,H ok

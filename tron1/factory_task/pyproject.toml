@@ -1,0 +1,26 @@
+[build-system]
+requires = ["hatchling>=1.25"]
+build-backend = "hatchling.build"
+
+[project]
+name = "factory-task"        # 配布名（ハイフンOK）
+version = "0.1.0"
+description = "Factory task simulation package"
+readme = "README.md"
+requires-python = ">=3.10"
+authors = [{ name = "Atsuki Akamisaka" }]
+dependencies = ["numpy"]
+
+[tool.hatch.build]
+# sdist に入れるファイル
+include = [
+  "factory_task/**",
+  "README.md",
+]
+
+# wheel に含めるパッケージ（これだけで十分）
+[tool.hatch.build.targets.wheel]
+packages = ["factory_task"]
+
+[project.scripts]
+factory-run = "factory_task.scripts.run_tron1a_example:main"

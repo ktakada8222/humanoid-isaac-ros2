@@ -1,0 +1,22 @@
+services:
+  glim-viewer:
+    build:
+      context: .
+      dockerfile: Dockerfile.glim_cyclone_cpu
+    image: glim_ros2:humble_cpu
+    container_name: glim-viewer
+    network_mode: host
+    environment:
+      - DISPLAY=${DISPLAY}
+      - QT_X11_NO_MITSHM=1
+      - LIBGL_ALWAYS_INDIRECT=0
+      - ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-0}
+    volumes:
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+      - ../slam/glim/output:/tmp/dump:rw
+    command:
+      - bash
+      - -lc
+      - |
+        source /opt/ros/humble/setup.bash
+        exec ros2 run glim_ros offline_viewer

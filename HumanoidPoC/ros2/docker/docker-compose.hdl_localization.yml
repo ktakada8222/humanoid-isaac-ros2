@@ -1,0 +1,92 @@
+services:
+  lidar-localization:
+    build:
+      context: .
+      dockerfile: Dockerfile.hdl_localization
+    image: lidar_localization:humble
+    container_name: lidar-localization
+    network_mode: host
+    environment:
+      - ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-0}
+      - RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=all
+    volumes:
+      - ../volume/slam/glim/maps:/maps:ro
+      - ./param/localization.yaml:/lidar_ws/src/hdl_localization/param/hdl_localization.yaml:ro
+    command:
+      - bash
+      - -lc
+      - |
+        source /opt/ros/humble/setup.bash
+        source /lidar_ws/install/setup.bash
+        exec ros2 launch hdl_localization hdl_localization.launch.py \
+          globalmap_pcd:=${GLOBALMAP_PCD:-/maps/lightwheel_map_with_intensity.pcd} \
+          use_pcd_map:=true \
+          use_imu:=true \
+          points_topic:=/lidar/points \
+          imu_topic:=/imu/data \
+          use_sim_time:=true \
+  pcd-publisher:
+    build:
+      context: .
+      dockerfile: Dockerfile.hdl_localization
+    image: lidar_localization:humble
+    container_name: pcd-publisher
+    network_mode: host
+    environment:
+      - ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-0}
+      - RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=all
+    volumes:
+      - ../volume/slam/glim/maps:/maps:ro
+    command:
+      - bash
+      - -lc
+      - |
+        source /opt/ros/humble/setup.bash
+        source /lidar_ws/install/setup.bash
+        exec ros2 run pcd_publisher pcd_publisher ${GLOBALMAP_PCD:-/maps/lightwheel_map_with_intensity.pcd}
+  rviz-localization:
+    # A) 既存のRViz用Dockerfileがある場合
+    build:
+      context: .
+      dockerfile: Dockerfile.rviz_cyclone
+    image: rviz:humble_cyclone
+    # B) 無い場合は下の1行に差し替え可
+    # image: ros:humble-desktop
+    container_name: rviz-localization
+    network_mode: host
+    depends_on:
+      - lidar-localization
+    environment:
+      - DISPLAY=${DISPLAY}
+      - QT_X11_NO_MITSHM=1
+      - LIBGL_ALWAYS_INDIRECT=0
+      - ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-0}
+      - RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=all
+    volumes:
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+      - ./rviz:/rviz:ro
+    command:
+      - bash
+      - -lc
+      - |
+        source /opt/ros/humble/setup.bash
+        exec rviz2 -d /rviz/hdl_localization.rviz --ros-args -p use_sim_time:=true
+
+  # tf-odom-base: # ヒューマノイドからはodomを計算するのは難しいので理想形とする
+  #   build:
+  #     context: .
+  #     dockerfile: Dockerfile.tf_base
+  #   image: tf-base:humble
+  #   container_name: tf-odom-base
+  #   network_mode: host
+  #   environment:
+  #     - ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-0}
+  #     - RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+  #   command: ["ros2", "run", "tf2_ros", "static_transform_publisher",
+  #             "0", "0", "0", "0", "0", "0", "1", "odom", "base_link"]

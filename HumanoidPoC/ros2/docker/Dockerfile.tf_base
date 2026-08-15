@@ -1,0 +1,9 @@
+FROM ros:humble
+
+# CycloneDDS RMWを追加
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      ros-humble-rmw-cyclonedds-cpp && \
+    rm -rf /var/lib/apt/lists/*
+
+# デフォルトCMDは何もせず（composeで上書き）
+CMD ["bash"]

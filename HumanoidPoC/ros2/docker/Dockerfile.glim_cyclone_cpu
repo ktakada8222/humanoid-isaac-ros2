@@ -1,0 +1,9 @@
+FROM koide3/glim_ros2:humble
+
+# CycloneDDS の RMW を追加
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ros-humble-rmw-cyclonedds-cpp && \
+    rm -rf /var/lib/apt/lists/*
+
+# 既定を CycloneDDS に
+ENV RMW_IMPLEMENTATION=rmw_cyclonedds_cpp

@@ -1,0 +1,10 @@
+routes:
+  - start: {x: -1.757, y: 3.619, yaw: -1.39}
+    goal:  {x: -0.56,  y: -3.00, yaw: -1.38}
+  # - start: {x: -6.72,  y: 2.86,  yaw: -1.39}
+  #   goal:  {x: -0.56,  y: -3.00, yaw: -1.38}
+  # - start: {x: -4.99,  y: -3.68, yaw: -1.33}
+  #   goal:  {x: -0.56,  y: -3.00, yaw: -1.38}
+timeout: 60  # 秒
+trials_per_route: 100
+success_flag_topic: /nav2/success_flag

@@ -1,0 +1,13 @@
+FROM osrf/ros:humble-desktop
+
+# CycloneDDS の RMW を追加
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ros-humble-rmw-cyclonedds-cpp \
+    ros-humble-rviz-imu-plugin && \
+    rm -rf /var/lib/apt/lists/*
+
+# 既定 RMW を Cyclone に
+ENV RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+
+# X11 警告の軽減
+ENV XDG_RUNTIME_DIR=/tmp
