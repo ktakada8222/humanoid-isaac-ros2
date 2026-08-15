@@ -27,6 +27,23 @@ def _is_update_step(env: ManagerBasedRLEnv, key: str) -> bool:
     return True
 
 
+def _shift_range(
+    current: tuple[float, float],
+    limit: tuple[float, float],
+    delta: float,
+    min_half_width: float,
+) -> list[float]:
+    """Widen (delta > 0) or narrow (delta < 0) a symmetric command range.
+
+    The lower bound is kept in [limit_low, -min_half_width] and the upper bound in
+    [min_half_width, limit_high], so narrowing can never make low > high (which would make
+    ``torch.Tensor.uniform_`` raise) nor collapse the range to a single point.
+    """
+    low = min(max(current[0] - delta, limit[0]), -min_half_width)
+    high = max(min(current[1] + delta, limit[1]), min_half_width)
+    return [float(low), float(high)]
+
+
 def lin_vel_cmd_levels(
     env: ManagerBasedRLEnv,
     env_ids: Sequence[int],
@@ -34,6 +51,7 @@ def lin_vel_cmd_levels(
     promote_ratio: float = 0.6,
     demote_ratio: float = 0.3,
     step: float = 0.1,
+    min_half_width: float = 0.1,
 ) -> torch.Tensor:
     command_term = env.command_manager.get_term("base_velocity")
     ranges = command_term.cfg.ranges
@@ -51,17 +69,8 @@ def lin_vel_cmd_levels(
             delta = 0.0
 
         if delta != 0.0:
-            delta_command = torch.tensor([-delta, delta], device=env.device)
-            ranges.lin_vel_x = torch.clamp(
-                torch.tensor(ranges.lin_vel_x, device=env.device) + delta_command,
-                limit_ranges.lin_vel_x[0],
-                limit_ranges.lin_vel_x[1],
-            ).tolist()
-            ranges.lin_vel_y = torch.clamp(
-                torch.tensor(ranges.lin_vel_y, device=env.device) + delta_command,
-                limit_ranges.lin_vel_y[0],
-                limit_ranges.lin_vel_y[1],
-            ).tolist()
+            ranges.lin_vel_x = _shift_range(ranges.lin_vel_x, limit_ranges.lin_vel_x, delta, min_half_width)
+            ranges.lin_vel_y = _shift_range(ranges.lin_vel_y, limit_ranges.lin_vel_y, delta, min_half_width)
 
     return torch.tensor(ranges.lin_vel_x[1], device=env.device)
 
@@ -73,6 +82,7 @@ def ang_vel_cmd_levels(
     promote_ratio: float = 0.6,
     demote_ratio: float = 0.3,
     step: float = 0.1,
+    min_half_width: float = 0.1,
 ) -> torch.Tensor:
     command_term = env.command_manager.get_term("base_velocity")
     ranges = command_term.cfg.ranges
@@ -90,11 +100,6 @@ def ang_vel_cmd_levels(
             delta = 0.0
 
         if delta != 0.0:
-            delta_command = torch.tensor([-delta, delta], device=env.device)
-            ranges.ang_vel_z = torch.clamp(
-                torch.tensor(ranges.ang_vel_z, device=env.device) + delta_command,
-                limit_ranges.ang_vel_z[0],
-                limit_ranges.ang_vel_z[1],
-            ).tolist()
+            ranges.ang_vel_z = _shift_range(ranges.ang_vel_z, limit_ranges.ang_vel_z, delta, min_half_width)
 
     return torch.tensor(ranges.ang_vel_z[1], device=env.device)
