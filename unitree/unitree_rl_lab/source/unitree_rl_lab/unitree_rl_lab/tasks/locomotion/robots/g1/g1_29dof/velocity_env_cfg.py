@@ -244,13 +244,16 @@ class RewardsCfg:
     """Reward terms for the MDP."""
 
     # -- task
+    # A non-translating robot already collects ~0.48 of this term (std^2=0.25 is wide relative
+    # to the command range), so at weight 1.0 the extra reward for actually moving was smaller
+    # than the gait/clearance shaping below -- the policy converged to marching in place.
     track_lin_vel_xy = RewTerm(
         func=mdp.track_lin_vel_xy_yaw_frame_exp,
-        weight=1.0,
+        weight=2.0,
         params={"command_name": "base_velocity", "std": math.sqrt(0.25)},
     )
     track_ang_vel_z = RewTerm(
-        func=mdp.track_ang_vel_z_exp, weight=0.5, params={"command_name": "base_velocity", "std": math.sqrt(0.25)}
+        func=mdp.track_ang_vel_z_exp, weight=1.0, params={"command_name": "base_velocity", "std": math.sqrt(0.25)}
     )
 
     alive = RewTerm(func=mdp.is_alive, weight=0.15)
@@ -261,7 +264,8 @@ class RewardsCfg:
     base_angular_velocity = RewTerm(func=mdp.ang_vel_xy_l2, weight=-0.2)
     joint_vel = RewTerm(func=mdp.joint_vel_l2, weight=-0.001)
     joint_acc = RewTerm(func=mdp.joint_acc_l2, weight=-2.5e-7)
-    action_rate = RewTerm(func=mdp.action_rate_l2, weight=-0.05)
+    # largest single penalty (-0.33) at -0.05, which taxes exactly the leg swing we want
+    action_rate = RewTerm(func=mdp.action_rate_l2, weight=-0.02)
     dof_pos_limits = RewTerm(func=mdp.joint_pos_limits, weight=-5.0)
     energy = RewTerm(func=mdp.energy, weight=-2e-5)
 
@@ -302,9 +306,10 @@ class RewardsCfg:
     base_height = RewTerm(func=mdp.base_height_l2, weight=-10, params={"target_height": 0.78})
 
     # -- feet
+    # saturated at its cap (0.5035/0.5) while the robot was not going anywhere
     gait = RewTerm(
         func=mdp.feet_gait,
-        weight=0.5,
+        weight=0.25,
         params={
             "period": 0.8,
             "offset": [0.0, 0.5],
@@ -321,9 +326,10 @@ class RewardsCfg:
             "sensor_cfg": SceneEntityCfg("contact_forces", body_names=".*ankle_roll.*"),
         },
     )
+    # was returning 0.96 of its cap -- shaping must not rival the task reward
     feet_clearance = RewTerm(
         func=mdp.foot_clearance_reward,
-        weight=1.0,
+        weight=0.3,
         params={
             "std": 0.05,
             "tanh_mult": 2.0,

@@ -160,6 +160,15 @@ def main():
 
     dt = env.unwrapped.step_dt
 
+    # optional diagnostics: UNITREE_DEBUG_CMD=1 reports what the policy is actually being
+    # asked to do vs what the base is actually doing, which separates "the policy is broken"
+    # from "the policy is being commanded to stand still".
+    debug_cmd = os.environ.get("UNITREE_DEBUG_CMD") == "1"
+    if debug_cmd:
+        cmd_term = env.unwrapped.command_manager.get_term("base_velocity")
+        print(f"[DEBUG] resolved command ranges: {cmd_term.cfg.ranges}")
+        print(f"[DEBUG] active curriculum terms: {env.unwrapped.curriculum_manager.active_terms}")
+
     # reset environment
     obs = env.get_observations()
     # isaaclab_rl < 0.4 (2.2 stack) returns (obs, extras); >= 0.4 returns obs only.
@@ -175,8 +184,17 @@ def main():
             actions = policy(obs)
             # env stepping
             obs, _, _, _ = env.step(actions)
+        if debug_cmd and timestep % 100 == 0:
+            cmd = cmd_term.command
+            vel = env.unwrapped.scene["robot"].data.root_lin_vel_b
+            yaw = env.unwrapped.scene["robot"].data.root_ang_vel_b[:, 2]
+            print(
+                f"[DEBUG] step {timestep:5d} | cmd vx={cmd[:, 0].mean():+.3f} vy={cmd[:, 1].mean():+.3f}"
+                f" wz={cmd[:, 2].mean():+.3f} | actual vx={vel[:, 0].mean():+.3f} vy={vel[:, 1].mean():+.3f}"
+                f" wz={yaw.mean():+.3f} | |action|={actions.abs().mean():.4f}"
+            )
+        timestep += 1
         if args_cli.video:
-            timestep += 1
             # Exit the play loop after recording one video
             if timestep == args_cli.video_length:
                 break
