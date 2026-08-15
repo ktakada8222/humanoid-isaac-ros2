@@ -44,6 +44,27 @@ def _shift_range(
     return [float(low), float(high)]
 
 
+def _reward_rate_and_survival(
+    env: ManagerBasedRLEnv, env_ids: Sequence[int], reward_term_name: str
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Mean per-second reward rate and mean survival fraction for the resetting envs.
+
+    ``RewardManager._episode_sums`` only holds what the episode actually accumulated, so
+    dividing by ``max_episode_length_s`` conflates "tracked badly" with "terminated early":
+    an env that falls after 3 s of a 20 s episode caps out at 0.15 no matter how well it
+    tracked, which pins the curriculum at its lowest level forever. Divide by the elapsed
+    time instead and report survival separately, so the two failure modes gate independently.
+
+    Safe to read ``episode_length_buf`` here: ``_reset_idx`` runs the curriculum before it
+    zeroes that buffer and before ``reward_manager.reset`` clears the episode sums.
+    """
+    elapsed = env.episode_length_buf[env_ids].float() * env.step_dt
+    sums = env.reward_manager._episode_sums[reward_term_name][env_ids]
+    rate = torch.mean(sums / elapsed.clamp(min=env.step_dt))
+    survival = torch.mean(elapsed) / env.max_episode_length_s
+    return rate, survival
+
+
 def lin_vel_cmd_levels(
     env: ManagerBasedRLEnv,
     env_ids: Sequence[int],
@@ -52,18 +73,19 @@ def lin_vel_cmd_levels(
     demote_ratio: float = 0.3,
     step: float = 0.1,
     min_half_width: float = 0.1,
+    min_survival: float = 0.5,
 ) -> torch.Tensor:
     command_term = env.command_manager.get_term("base_velocity")
     ranges = command_term.cfg.ranges
     limit_ranges = command_term.cfg.limit_ranges
 
     reward_term = env.reward_manager.get_term_cfg(reward_term_name)
-    reward = torch.mean(env.reward_manager._episode_sums[reward_term_name][env_ids]) / env.max_episode_length_s
+    rate, survival = _reward_rate_and_survival(env, env_ids, reward_term_name)
 
     if _is_update_step(env, "lin"):
-        if reward > reward_term.weight * promote_ratio:
+        if rate > reward_term.weight * promote_ratio and survival > min_survival:
             delta = step
-        elif reward < reward_term.weight * demote_ratio:
+        elif rate < reward_term.weight * demote_ratio:
             delta = -step
         else:
             delta = 0.0
@@ -83,18 +105,19 @@ def ang_vel_cmd_levels(
     demote_ratio: float = 0.3,
     step: float = 0.1,
     min_half_width: float = 0.1,
+    min_survival: float = 0.5,
 ) -> torch.Tensor:
     command_term = env.command_manager.get_term("base_velocity")
     ranges = command_term.cfg.ranges
     limit_ranges = command_term.cfg.limit_ranges
 
     reward_term = env.reward_manager.get_term_cfg(reward_term_name)
-    reward = torch.mean(env.reward_manager._episode_sums[reward_term_name][env_ids]) / env.max_episode_length_s
+    rate, survival = _reward_rate_and_survival(env, env_ids, reward_term_name)
 
     if _is_update_step(env, "ang"):
-        if reward > reward_term.weight * promote_ratio:
+        if rate > reward_term.weight * promote_ratio and survival > min_survival:
             delta = step
-        elif reward < reward_term.weight * demote_ratio:
+        elif rate < reward_term.weight * demote_ratio:
             delta = -step
         else:
             delta = 0.0
