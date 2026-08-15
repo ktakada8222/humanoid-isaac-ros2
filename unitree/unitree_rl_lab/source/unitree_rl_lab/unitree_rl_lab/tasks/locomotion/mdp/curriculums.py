@@ -73,7 +73,7 @@ def lin_vel_cmd_levels(
     demote_ratio: float = 0.3,
     step: float = 0.1,
     min_half_width: float = 0.1,
-    min_survival: float = 0.5,
+    min_survival: float = 0.4,
 ) -> torch.Tensor:
     command_term = env.command_manager.get_term("base_velocity")
     ranges = command_term.cfg.ranges
@@ -105,7 +105,7 @@ def ang_vel_cmd_levels(
     demote_ratio: float = 0.3,
     step: float = 0.1,
     min_half_width: float = 0.1,
-    min_survival: float = 0.5,
+    min_survival: float = 0.4,
 ) -> torch.Tensor:
     command_term = env.command_manager.get_term("base_velocity")
     ranges = command_term.cfg.ranges

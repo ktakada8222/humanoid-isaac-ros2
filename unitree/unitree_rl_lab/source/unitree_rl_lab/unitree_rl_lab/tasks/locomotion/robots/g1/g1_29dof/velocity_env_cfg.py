@@ -148,11 +148,13 @@ class EventCfg:
     )
 
     # interval
+    # a 0.5 m/s shove every 5 s is a lot of disturbance for a gait that is not stable yet;
+    # push less often and less hard so the policy can converge before it is stress-tested
     push_robot = EventTerm(
         func=mdp.push_by_setting_velocity,
         mode="interval",
-        interval_range_s=(5.0, 5.0),
-        params={"velocity_range": {"x": (-0.5, 0.5), "y": (-0.5, 0.5)}},
+        interval_range_s=(8.0, 12.0),
+        params={"velocity_range": {"x": (-0.3, 0.3), "y": (-0.3, 0.3)}},
     )
 
 
@@ -255,7 +257,8 @@ class RewardsCfg:
 
     # -- base
     base_linear_velocity = RewTerm(func=mdp.lin_vel_z_l2, weight=-2.0)
-    base_angular_velocity = RewTerm(func=mdp.ang_vel_xy_l2, weight=-0.05)
+    # -0.05 was too weak to stop the torso tipping: ~96% of episodes ended on bad_orientation
+    base_angular_velocity = RewTerm(func=mdp.ang_vel_xy_l2, weight=-0.2)
     joint_vel = RewTerm(func=mdp.joint_vel_l2, weight=-0.001)
     joint_acc = RewTerm(func=mdp.joint_acc_l2, weight=-2.5e-7)
     action_rate = RewTerm(func=mdp.action_rate_l2, weight=-0.05)
@@ -355,8 +358,11 @@ class CurriculumCfg:
 
     terrain_levels = CurrTerm(func=mdp.terrain_levels_vel)
     lin_vel_cmd_levels = CurrTerm(mdp.lin_vel_cmd_levels)
-    # without this the yaw command stays at its initial range forever and turning is never learned
-    ang_vel_cmd_levels = CurrTerm(mdp.ang_vel_cmd_levels)
+    # without this the yaw command stays at its initial range forever and turning is never learned.
+    # min_half_width matches the initial range: demoting the yaw command below it creates a trap
+    # where an unstable yaw axis kills the tracking reward, which shrinks the command, which
+    # removes any pressure to learn yaw control at all.
+    ang_vel_cmd_levels = CurrTerm(mdp.ang_vel_cmd_levels, params={"min_half_width": 0.3})
 
 
 @configclass
