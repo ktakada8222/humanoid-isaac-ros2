@@ -86,7 +86,13 @@ class RobotSceneCfg(InteractiveSceneCfg):
 
 @configclass
 class EventCfg:
-    """Configuration for events."""
+    """Configuration for events.
+
+    Mirrors IsaacLab's ``velocity_env_cfg.EventCfg`` with the domain randomization that
+    ``config/g1/flat_env_cfg.py`` re-enables (the G1 rough cfg disables push/mass/COM). This is the
+    single biggest lever for push robustness and sim-to-real: without velocity pushes and
+    mass/COM/friction variation the policy never learns to reject disturbances.
+    """
 
     # startup
     physics_material = EventTerm(
@@ -94,20 +100,30 @@ class EventCfg:
         mode="startup",
         params={
             "asset_cfg": SceneEntityCfg("robot", body_names=".*"),
-            "static_friction_range": (0.3, 1.0),
-            "dynamic_friction_range": (0.3, 1.0),
+            "static_friction_range": (0.6, 1.2),
+            "dynamic_friction_range": (0.4, 1.0),
             "restitution_range": (0.0, 0.0),
             "num_buckets": 64,
         },
     )
 
+    # torso_link is the G1 root body (IsaacLab's generic cfg calls it "base")
     add_base_mass = EventTerm(
         func=mdp.randomize_rigid_body_mass,
         mode="startup",
         params={
             "asset_cfg": SceneEntityCfg("robot", body_names="torso_link"),
-            "mass_distribution_params": (-1.0, 3.0),
+            "mass_distribution_params": (-3.0, 3.0),
             "operation": "add",
+        },
+    )
+
+    base_com = EventTerm(
+        func=mdp.randomize_rigid_body_com,
+        mode="startup",
+        params={
+            "asset_cfg": SceneEntityCfg("robot", body_names="torso_link"),
+            "com_range": {"x": (-0.05, 0.05), "y": (-0.05, 0.05), "z": (-0.02, 0.02)},
         },
     )
 
@@ -143,40 +159,39 @@ class EventCfg:
         mode="reset",
         params={
             "position_range": (1.0, 1.0),
-            "velocity_range": (-1.0, 1.0),
+            "velocity_range": (0.0, 0.0),
         },
     )
 
     # interval
-    # a 0.5 m/s shove every 5 s is a lot of disturbance for a gait that is not stable yet;
-    # push less often and less hard so the policy can converge before it is stress-tested
     push_robot = EventTerm(
         func=mdp.push_by_setting_velocity,
         mode="interval",
-        interval_range_s=(8.0, 12.0),
-        params={"velocity_range": {"x": (-0.3, 0.3), "y": (-0.3, 0.3)}},
+        interval_range_s=(8.0, 13.0),
+        params={"velocity_range": {"x": (-0.8, 0.8), "y": (-0.8, 0.8)}},
     )
 
 
 @configclass
 class CommandsCfg:
-    """Command specifications for the MDP."""
+    """Command specifications for the MDP.
 
-    base_velocity = mdp.UniformLevelVelocityCommandCfg(
+    Follows IsaacLab's ``UniformVelocityCommandCfg`` with heading control, at the command ranges
+    from ``config/g1/flat_env_cfg.py``: forward run, backward, wider lateral/turn. The exp-shaped
+    tracking reward tolerates commands the robot cannot yet reach, so it keeps a gradient while
+    learning to go faster -- which is why IsaacLab needs no command-magnitude curriculum here.
+    """
+
+    base_velocity = mdp.UniformVelocityCommandCfg(
         asset_name="robot",
         resampling_time_range=(10.0, 10.0),
         rel_standing_envs=0.02,
         rel_heading_envs=1.0,
-        heading_command=False,
+        heading_command=True,
+        heading_control_stiffness=0.5,
         debug_vis=True,
-        # Start the curriculum at a command magnitude that actually requires stepping.
-        # (+-0.1 m/s is satisfiable by standing still: exp(-0.01/0.25) ~ 0.96, so the policy
-        #  has no incentive to produce a gait and the curriculum stalls at the first level.)
-        ranges=mdp.UniformLevelVelocityCommandCfg.Ranges(
-            lin_vel_x=(-0.3, 0.5), lin_vel_y=(-0.2, 0.2), ang_vel_z=(-0.3, 0.3)
-        ),
-        limit_ranges=mdp.UniformLevelVelocityCommandCfg.Ranges(
-            lin_vel_x=(-0.5, 1.0), lin_vel_y=(-0.3, 0.3), ang_vel_z=(-1.0, 1.0)
+        ranges=mdp.UniformVelocityCommandCfg.Ranges(
+            lin_vel_x=(-1.5, 3.0), lin_vel_y=(-1.0, 1.0), ang_vel_z=(-1.0, 1.0), heading=(-math.pi, math.pi)
         ),
     )
 
@@ -185,8 +200,10 @@ class CommandsCfg:
 class ActionsCfg:
     """Action specifications for the MDP."""
 
+    # 0.5 to match IsaacLab's locomotion action scale; the wider command range (up to 3 m/s)
+    # needs more joint excursion per action than the 0.25 this file used to carry.
     JointPositionAction = mdp.JointPositionActionCfg(
-        asset_name="robot", joint_names=[".*"], scale=0.25, use_default_offset=True
+        asset_name="robot", joint_names=[".*"], scale=0.5, use_default_offset=True
     )
 
 
@@ -241,34 +258,75 @@ class ObservationsCfg:
 
 @configclass
 class RewardsCfg:
-    """Reward terms for the MDP."""
+    """Reward terms for the MDP.
+
+    Ported from IsaacLab: ``velocity/velocity_env_cfg.py::RewardsCfg`` +
+    ``config/g1/rough_env_cfg.py::G1Rewards`` + the weight overrides in
+    ``config/g1/flat_env_cfg.py``. Joint/body regexes are adapted to the Unitree G1 29-DOF model
+    (``.*_elbow_joint`` instead of elbow pitch/roll, ``waist_*_joint`` instead of ``torso_joint``,
+    no finger joints).
+    """
 
     # -- task
-    # A non-translating robot already collects ~0.48 of this term (std^2=0.25 is wide relative
-    # to the command range), so at weight 1.0 the extra reward for actually moving was smaller
-    # than the gait/clearance shaping below -- the policy converged to marching in place.
-    track_lin_vel_xy = RewTerm(
+    # A hard cost on falling is what makes standing still strictly worse than walking here; it
+    # replaces the alive bonus / gait / clearance shaping this file used to carry.
+    termination_penalty = RewTerm(func=mdp.is_terminated, weight=-200.0)
+    track_lin_vel_xy_exp = RewTerm(
         func=mdp.track_lin_vel_xy_yaw_frame_exp,
-        weight=2.0,
-        params={"command_name": "base_velocity", "std": math.sqrt(0.25)},
+        weight=1.0,
+        params={"command_name": "base_velocity", "std": 0.5},
     )
-    track_ang_vel_z = RewTerm(
-        func=mdp.track_ang_vel_z_exp, weight=1.0, params={"command_name": "base_velocity", "std": math.sqrt(0.25)}
+    track_ang_vel_z_exp = RewTerm(
+        func=mdp.track_ang_vel_z_world_exp, weight=1.0, params={"command_name": "base_velocity", "std": 0.5}
     )
 
-    alive = RewTerm(func=mdp.is_alive, weight=0.15)
+    # -- penalties
+    lin_vel_z_l2 = RewTerm(func=mdp.lin_vel_z_l2, weight=-0.2)
+    ang_vel_xy_l2 = RewTerm(func=mdp.ang_vel_xy_l2, weight=-0.05)
+    dof_torques_l2 = RewTerm(
+        func=mdp.joint_torques_l2,
+        weight=-2.0e-6,
+        params={"asset_cfg": SceneEntityCfg("robot", joint_names=[".*_hip_.*", ".*_knee_joint"])},
+    )
+    dof_acc_l2 = RewTerm(
+        func=mdp.joint_acc_l2,
+        weight=-1.0e-7,
+        params={"asset_cfg": SceneEntityCfg("robot", joint_names=[".*_hip_.*", ".*_knee_joint"])},
+    )
+    action_rate_l2 = RewTerm(func=mdp.action_rate_l2, weight=-0.01)
+    flat_orientation_l2 = RewTerm(func=mdp.flat_orientation_l2, weight=-1.0)
+    # Penalize ankle joint limits only
+    dof_pos_limits = RewTerm(
+        func=mdp.joint_pos_limits,
+        weight=-1.0,
+        params={"asset_cfg": SceneEntityCfg("robot", joint_names=[".*_ankle_pitch_joint", ".*_ankle_roll_joint"])},
+    )
 
-    # -- base
-    base_linear_velocity = RewTerm(func=mdp.lin_vel_z_l2, weight=-2.0)
-    # -0.05 was too weak to stop the torso tipping: ~96% of episodes ended on bad_orientation
-    base_angular_velocity = RewTerm(func=mdp.ang_vel_xy_l2, weight=-0.2)
-    joint_vel = RewTerm(func=mdp.joint_vel_l2, weight=-0.001)
-    joint_acc = RewTerm(func=mdp.joint_acc_l2, weight=-2.5e-7)
-    # largest single penalty (-0.33) at -0.05, which taxes exactly the leg swing we want
-    action_rate = RewTerm(func=mdp.action_rate_l2, weight=-0.02)
-    dof_pos_limits = RewTerm(func=mdp.joint_pos_limits, weight=-5.0)
-    energy = RewTerm(func=mdp.energy, weight=-2e-5)
+    # -- feet
+    feet_air_time = RewTerm(
+        func=mdp.feet_air_time_positive_biped,
+        weight=0.75,
+        params={
+            "command_name": "base_velocity",
+            "sensor_cfg": SceneEntityCfg("contact_forces", body_names=".*ankle_roll.*"),
+            "threshold": 0.4,
+        },
+    )
+    feet_slide = RewTerm(
+        func=mdp.feet_slide,
+        weight=-0.3,
+        params={
+            "sensor_cfg": SceneEntityCfg("contact_forces", body_names=".*ankle_roll.*"),
+            "asset_cfg": SceneEntityCfg("robot", body_names=".*ankle_roll.*"),
+        },
+    )
 
+    # -- deviation from default pose for joints that are not essential for locomotion
+    joint_deviation_hip = RewTerm(
+        func=mdp.joint_deviation_l1,
+        weight=-0.1,
+        params={"asset_cfg": SceneEntityCfg("robot", joint_names=[".*_hip_yaw_joint", ".*_hip_roll_joint"])},
+    )
     joint_deviation_arms = RewTerm(
         func=mdp.joint_deviation_l1,
         weight=-0.1,
@@ -276,113 +334,47 @@ class RewardsCfg:
             "asset_cfg": SceneEntityCfg(
                 "robot",
                 joint_names=[
-                    ".*_shoulder_.*_joint",
+                    ".*_shoulder_pitch_joint",
+                    ".*_shoulder_roll_joint",
+                    ".*_shoulder_yaw_joint",
                     ".*_elbow_joint",
-                    ".*_wrist_.*",
+                    ".*_wrist_.*_joint",
                 ],
             )
         },
     )
-    joint_deviation_waists = RewTerm(
+    # IsaacLab's G1 has a single "torso_joint"; the 29-DOF model splits it into three waist joints.
+    joint_deviation_torso = RewTerm(
         func=mdp.joint_deviation_l1,
-        weight=-1,
-        params={
-            "asset_cfg": SceneEntityCfg(
-                "robot",
-                joint_names=[
-                    "waist.*",
-                ],
-            )
-        },
-    )
-    joint_deviation_legs = RewTerm(
-        func=mdp.joint_deviation_l1,
-        weight=-1.0,
-        params={"asset_cfg": SceneEntityCfg("robot", joint_names=[".*_hip_roll_joint", ".*_hip_yaw_joint"])},
-    )
-
-    # -- robot
-    flat_orientation_l2 = RewTerm(func=mdp.flat_orientation_l2, weight=-5.0)
-    base_height = RewTerm(func=mdp.base_height_l2, weight=-10, params={"target_height": 0.78})
-
-    # -- feet
-    # saturated at its cap (0.5035/0.5) while the robot was not going anywhere
-    gait = RewTerm(
-        func=mdp.feet_gait,
-        weight=0.25,
-        params={
-            "period": 0.8,
-            "offset": [0.0, 0.5],
-            "threshold": 0.55,
-            "command_name": "base_velocity",
-            "sensor_cfg": SceneEntityCfg("contact_forces", body_names=".*ankle_roll.*"),
-        },
-    )
-    feet_slide = RewTerm(
-        func=mdp.feet_slide,
-        weight=-0.2,
-        params={
-            "asset_cfg": SceneEntityCfg("robot", body_names=".*ankle_roll.*"),
-            "sensor_cfg": SceneEntityCfg("contact_forces", body_names=".*ankle_roll.*"),
-        },
-    )
-    # Rewards a step only while exactly one foot is on the ground, so a robot standing on both
-    # feet scores zero. This is the only term here that a stationary robot cannot collect, and
-    # it is what makes taking a step strictly better than not taking one.
-    feet_air_time = RewTerm(
-        func=mdp.feet_air_time_positive_biped,
-        weight=1.0,
-        params={
-            "command_name": "base_velocity",
-            "threshold": 0.4,
-            "sensor_cfg": SceneEntityCfg("contact_forces", body_names=".*ankle_roll.*"),
-        },
-    )
-    # NOTE: foot_clearance_reward multiplies the height error by tanh(|foot velocity|), so a foot
-    # that never moves has zero error and collects exp(0) = 1.0, the maximum. It rewards keeping
-    # the feet still, not lifting them. Kept only as weak swing-height shaping.
-    feet_clearance = RewTerm(
-        func=mdp.foot_clearance_reward,
-        weight=0.1,
-        params={
-            "std": 0.05,
-            "tanh_mult": 2.0,
-            "target_height": 0.1,
-            "asset_cfg": SceneEntityCfg("robot", body_names=".*ankle_roll.*"),
-        },
-    )
-
-    # -- other
-    undesired_contacts = RewTerm(
-        func=mdp.undesired_contacts,
-        weight=-1,
-        params={
-            "threshold": 1,
-            "sensor_cfg": SceneEntityCfg("contact_forces", body_names=["(?!.*ankle.*).*"]),
-        },
+        weight=-0.1,
+        params={"asset_cfg": SceneEntityCfg("robot", joint_names=["waist_.*_joint"])},
     )
 
 
 @configclass
 class TerminationsCfg:
-    """Termination terms for the MDP."""
+    """Termination terms for the MDP.
+
+    IsaacLab's G1 terminates on torso contact only; the -200 termination penalty is calibrated
+    against that single failure event, so height/orientation terminations are deliberately absent.
+    """
 
     time_out = DoneTerm(func=mdp.time_out, time_out=True)
-    base_height = DoneTerm(func=mdp.root_height_below_minimum, params={"minimum_height": 0.2})
-    bad_orientation = DoneTerm(func=mdp.bad_orientation, params={"limit_angle": 0.8})
+    base_contact = DoneTerm(
+        func=mdp.illegal_contact,
+        params={"sensor_cfg": SceneEntityCfg("contact_forces", body_names="torso_link"), "threshold": 1.0},
+    )
 
 
 @configclass
 class CurriculumCfg:
-    """Curriculum terms for the MDP."""
+    """Curriculum terms for the MDP.
+
+    Terrain levels only, as in IsaacLab. The command-magnitude curricula are gone: commands now
+    start at the full flat-env range and the exp tracking reward supplies the gradient.
+    """
 
     terrain_levels = CurrTerm(func=mdp.terrain_levels_vel)
-    lin_vel_cmd_levels = CurrTerm(mdp.lin_vel_cmd_levels)
-    # without this the yaw command stays at its initial range forever and turning is never learned.
-    # min_half_width matches the initial range: demoting the yaw command below it creates a trap
-    # where an unstable yaw axis kills the tracking reward, which shrinks the command, which
-    # removes any pressure to learn yaw control at all.
-    ang_vel_cmd_levels = CurrTerm(mdp.ang_vel_cmd_levels, params={"min_half_width": 0.3})
 
 
 @configclass
@@ -429,22 +421,37 @@ class RobotEnvCfg(ManagerBasedRLEnvCfg):
 
 @configclass
 class RobotPlayEnvCfg(RobotEnvCfg):
+    """Evaluation config, following IsaacLab's ``G1FlatEnvCfg_PLAY``."""
+
     def __post_init__(self):
         super().__post_init__()
+        # make a smaller scene for play
         self.scene.num_envs = 32
-        self.scene.terrain.terrain_generator.num_rows = 2
-        self.scene.terrain.terrain_generator.num_cols = 10
-        # Do NOT blindly replay at limit_ranges: the yaw limit is +-1.0 rad/s but the command
-        # curriculum only reaches whatever level training actually unlocked, so commanding the
-        # full limit feeds the policy out-of-distribution commands and it looks broken.
-        # Widen these to match Curriculum/ang_vel_cmd_levels from the run being replayed.
-        self.commands.base_velocity.ranges = mdp.UniformLevelVelocityCommandCfg.Ranges(
-            lin_vel_x=(-0.5, 1.0), lin_vel_y=(-0.3, 0.3), ang_vel_z=(-0.3, 0.3)
-        )
-        # Curricula must not run during inference. The command-level terms mutate `ranges` in
-        # place, and on the first reset the episode sums are still zero, so they read a tracking
-        # rate of 0 and immediately start demoting -- shrinking the command to +-0.1 m/s, which
-        # makes a perfectly good policy look like it is just standing there.
+        self.scene.env_spacing = 2.5
+        self.episode_length_s = 40.0
+        # spawn the robot randomly in the grid (instead of their terrain levels)
+        self.scene.terrain.max_init_terrain_level = None
+        if self.scene.terrain.terrain_generator is not None:
+            self.scene.terrain.terrain_generator.num_rows = 5
+            self.scene.terrain.terrain_generator.num_cols = 5
+            self.scene.terrain.terrain_generator.curriculum = False
+
+        # Commands are no longer curriculum-gated, so replaying at the training range is in
+        # distribution. Fix the heading so the robot drives the commanded velocity directly.
+        self.commands.base_velocity.ranges.lin_vel_x = (1.0, 1.0)
+        self.commands.base_velocity.ranges.lin_vel_y = (0.0, 0.0)
+        self.commands.base_velocity.ranges.ang_vel_z = (-1.0, 1.0)
+        self.commands.base_velocity.ranges.heading = (0.0, 0.0)
+
+        # disable randomization for play (clean, reproducible measurement)
+        self.observations.policy.enable_corruption = False
+        self.events.base_external_force_torque = None
+        self.events.push_robot = None
+        self.events.add_base_mass = None
+        self.events.base_com = None
+        self.events.physics_material.params["static_friction_range"] = (0.8, 0.8)
+        self.events.physics_material.params["dynamic_friction_range"] = (0.6, 0.6)
+
+        # Curricula must not run during inference: terrain_levels mutates env terrain origins on
+        # reset, which is not what you want when measuring a fixed policy.
         self.curriculum.terrain_levels = None
-        self.curriculum.lin_vel_cmd_levels = None
-        self.curriculum.ang_vel_cmd_levels = None
